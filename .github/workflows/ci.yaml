@@ -3,7 +3,10 @@
 name: product-catalog-ci
 
 on: 
-    pull_request:
+  push:
+    branches:
+      - '**' 
+  pull_request:
         branches:
         - main
 
