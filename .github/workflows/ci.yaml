@@ -31,6 +31,12 @@ jobs:
               cd src/frontend
               npm ci  # Faster and more reliable for CI than `npm install`
         
+        - name: Install protoc
+          run: |
+                sudo apt update
+                sudo apt install -y protobuf-compiler
+                protoc --version  # Optional: verify installation
+        
         - name: Generate protos
           run: |
                 cd src/frontend
