@@ -34,7 +34,8 @@ jobs:
         - name: Generate protos
           run: |
                 cd src/frontend
-                npm run proto:gen
+                npm run grpc:generate
+            
           
         - name: Build
           run: |
