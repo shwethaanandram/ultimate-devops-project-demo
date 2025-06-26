@@ -37,10 +37,7 @@ jobs:
                 sudo apt install -y protobuf-compiler
                 protoc --version  # Optional: verify installation
         
-        - name: Generate protos
-          run: |
-                cd src/frontend
-                npm run grpc:generate
+   
             
           
         - name: Build
