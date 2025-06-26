@@ -30,6 +30,11 @@ jobs:
           run: |
               cd src/frontend
               npm ci  # Faster and more reliable for CI than `npm install`
+        
+        - name: Generate protos
+          run: |
+                cd src/frontend
+                npm run proto:gen
           
         - name: Build
           run: |
