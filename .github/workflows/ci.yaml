@@ -1,14 +1,9 @@
+# CI for Product Catalog Service
 
-# CI for frontend service
-
-
-name: frontend-ci
+name: product-catalog-ci
 
 on: 
-  push:
-    branches:
-      - '**' 
-  pull_request:
+    pull_request:
         branches:
         - main
 
@@ -20,61 +15,40 @@ jobs:
         - name: checkout code
           uses: actions/checkout@v4
 
-        - name: Setup Nodejs 20
-          uses: actions/setup-node@v4
+        - name: Setup Go 1.22
+          uses: actions/setup-go@v2
           with:
-            node-version: 20
+            go-version: 1.22
         
-
-        - name: Install dependencies
-          run: |
-              cd src/frontend
-              npm ci  # Faster and more reliable for CI than `npm install`
-        
-        - name: Install protoc
-          run: |
-                sudo apt update
-                sudo apt install -y protobuf-compiler
-                protoc --version  # Optional: verify installation
-        
-   
-            
-          
         - name: Build
           run: |
-              cd src/frontend
-              npm run build  # Only if you have a build script in package.json
-          
-        - name: Run Unit Tests
-          run: |
-              cd src/frontend
-              npm test
-             
-       
+            cd src/product-catalog
+            go mod download
+            go build -o product-catalog-service main.go
 
+        - name: unit tests
+          run: |
+            cd src/product-catalog
+            go test ./...
+    
     code-quality:
-      runs-on: ubuntu-latest
+        runs-on: ubuntu-latest
 
-      steps:
-        - name: Checkout code
+        steps:
+        - name: checkout code
           uses: actions/checkout@v4
-
-        - name: Setup Node.js 20
-          uses: actions/setup-node@v4
+        
+        - name: Setup Go 1.22
+          uses: actions/setup-go@v2
           with:
-            node-version: 20
-
-        - name: Install dependencies
-          run: |
-           cd src/frontend
-           npm ci
-
-        - name: Run ESLint
-          run: |
-           cd src/frontend
-           npx eslint .
-  
-   
+           go-version: 1.22
+        
+        - name: Run golangci-lint
+          uses: golangci/golangci-lint-action@v6
+          with:
+            version: v1.55.2
+            run: golangci-lint run
+            working-directory: src/product-catalog
 
     docker:
         runs-on: ubuntu-latest
@@ -97,10 +71,10 @@ jobs:
         - name: Docker Push
           uses: docker/build-push-action@v6
           with:
-            context: src/frontend
-            file: src/frontend/Dockerfile
+            context: src/product-catalog
+            file: src/product-catalog/Dockerfile
             push: true
-            tags: ${{ secrets.DOCKER_USERNAME }}/frontend:${{github.run_id}}
+            tags: ${{ secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}
 
     
     updatek8s:
@@ -116,19 +90,13 @@ jobs:
 
         - name: Update tag in kubernetes deployment manifest
           run: | 
-               sed -i "s|image: .*|image: ${{ secrets.DOCKER_USERNAME }}/frontend:${{github.run_id}}|" kubernetes/frontend/deploy.yaml
+               sed -i "s|image: .*|image: ${{ secrets.DOCKER_USERNAME }}/product-catalog:${{github.run_id}}|" kubernetes/productcatalog/deploy.yaml
         
         - name: Commit and push changes
           run: |
             git config --global user.email "shwetha.na88@gmail.com"
             git config --global user.name "shwethaanandram"
-            git add kubernetes/frontend/deploy.yaml
-            git commit -m "[CI]: Update frontend image tag"
+            git add kubernetes/productcatalog/deploy.yaml
+            git commit -m "[CI]: Update product catalog image tag"
             git push origin HEAD:main -f
 
-        
-        
-          
-
-
-        
