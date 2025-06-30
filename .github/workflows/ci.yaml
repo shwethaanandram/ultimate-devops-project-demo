@@ -1,46 +1,48 @@
-name: CI Pipeline for All Services
+name: CI Pipeline for All Services with Docker Compose + ArgoCD
 
 on:
-  pull_request:
-    branches:
-      - main
   push:
     branches:
-      - '**'
+      - main
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        service:
-          - accounting
-          - ad
-          - cart
-          - checkout
-          - currency
-          - email
-          - flagd
-          - flagd-ui
-          - fraud-detection
-          - frontend
-          - frontend-proxy
-          - grafana
-          - image-provider
-          - kafka
-          - load-generator
-          - otel-collector
-          - payment
-          - product-catalog
-          - prometheus
-          - quote
-          - react-native-app
-          - recommendation
-          - shipping
 
     steps:
-      - name: Checkout code
+      - name: Checkout source code
         uses: actions/checkout@v4
+
+      - name: Set environment variables for all services
+        run: |
+          cat <<EOF > .env
+          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}
+          DEMO_VERSION=${{ github.run_id }}
+          IMAGE_VERSION=latest
+          ACCOUNTING_DOCKERFILE=src/accounting/Dockerfile
+          AD_DOCKERFILE=src/ad/Dockerfile
+          CART_DOCKERFILE=src/cart/src/Dockerfile
+          CHECKOUT_DOCKERFILE=src/checkout/Dockerfile
+          CURRENCY_DOCKERFILE=src/currency/Dockerfile
+          EMAIL_DOCKERFILE=src/email/Dockerfile
+          FLAGD_DOCKERFILE=src/flagd/Dockerfile
+          FLAGD_UI_DOCKERFILE=src/flagd-ui/Dockerfile
+          FRAUD_DOCKERFILE=src/fraud-detection/Dockerfile
+          FRONTEND_DOCKERFILE=src/frontend/Dockerfile
+          FRONTEND_PROXY_DOCKERFILE=src/frontend-proxy/Dockerfile
+          GRAFANA_DOCKERFILE=src/grafana/Dockerfile
+          IMAGE_PROVIDER_DOCKERFILE=src/image-provider/Dockerfile
+          KAFKA_DOCKERFILE=src/kafka/Dockerfile
+          LOAD_GENERATOR_DOCKERFILE=src/load-generator/Dockerfile
+          OTEL_COLLECTOR_DOCKERFILE=src/otel-collector/Dockerfile
+          PAYMENT_DOCKERFILE=src/payment/Dockerfile
+          PRODUCT_CATALOG_DOCKERFILE=src/product-catalog/Dockerfile
+          PROMETHEUS_DOCKERFILE=src/prometheus/Dockerfile
+          QUOTE_DOCKERFILE=src/quote/Dockerfile
+          REACT_NATIVE_APP_DOCKERFILE=src/react-native-app/Dockerfile
+          RECOMMENDATION_DOCKERFILE=src/recommendation/Dockerfile
+          SHIPPING_DOCKERFILE=src/shipping/Dockerfile
+          EOF
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -51,27 +53,25 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-      - name: Debug — Verify Dockerfile Path
+      - name: Build and Push All Microservices via Docker Compose
         run: |
-          echo "Checking path: ./src/${{ matrix.service }}/Dockerfile"
-          ls -l ./src/${{ matrix.service }}/Dockerfile
+          docker-compose --env-file .env build
+          for svc in $(docker-compose --env-file .env config --services); do
+            image="${{ secrets.DOCKER_USERNAME }}:${{ github.run_id }}-${svc}"
+            docker tag ${svc} $image
+            docker push $image
+          done
 
-      - name: Build and Push Docker Image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./src/${{ matrix.service }}
-          file: ./src/${{ matrix.service }}/Dockerfile
-          push: true
-          tags: ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:${{ github.run_id }}
-
-      - name: Update Kubernetes Deployment Manifest
+      - name: Update Kubernetes Manifest File
         run: |
-          sed -i "s|image: .*$|image: ${{ secrets.DOCKER_USERNAME }}/${{ matrix.service }}:${{ github.run_id }}|" kubernetes/${{ matrix.service }}/deploy.yaml
+          for svc in $(docker-compose --env-file .env config --services); do
+            sed -i "s|image: .*/${svc}:.*|image: ${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}|g" kubernetes/complete-deploy.yml
+          done
 
-      - name: Commit and Push Updated Manifest
+      - name: Commit and Push Updated Manifest to Trigger ArgoCD
         run: |
           git config --global user.name "shwethaanandram"
           git config --global user.email "shwetha.na88@gmail.com"
-          git add kubernetes/${{ matrix.service }}/deploy.yaml
-          git commit -m "[CI] Update image for ${{ matrix.service }}"
+          git add kubernetes/complete-deploy.yml
+          git commit -m "[CI] Updated image tags for all microservices"
           git push origin main
