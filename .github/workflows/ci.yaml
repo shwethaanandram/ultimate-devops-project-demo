@@ -9,8 +9,6 @@ on:
       - '**'
   workflow_dispatch:
 
-  
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -18,47 +16,6 @@ jobs:
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
-
-      - name: Set environment variables for all services
-        run: |
-          cat <<EOF > .env
-          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}
-          DEMO_VERSION=${{ github.run_id }}
-          IMAGE_VERSION=latest
-          ACCOUNTING_DOCKERFILE=src/accounting/Dockerfile
-          AD_DOCKERFILE=src/ad/Dockerfile
-          CART_DOCKERFILE=src/cart/src/Dockerfile
-          CHECKOUT_DOCKERFILE=src/checkout/Dockerfile
-          CURRENCY_DOCKERFILE=src/currency/Dockerfile
-          EMAIL_DOCKERFILE=src/email/Dockerfile
-          FLAGD_DOCKERFILE=src/flagd/Dockerfile
-          FLAGD_UI_DOCKERFILE=src/flagd-ui/Dockerfile
-          FRAUD_DOCKERFILE=src/fraud-detection/Dockerfile
-          FRONTEND_DOCKERFILE=src/frontend/Dockerfile
-          FRONTEND_PROXY_DOCKERFILE=src/frontend-proxy/Dockerfile
-          IMAGE_PROVIDER_DOCKERFILE=src/image-provider/Dockerfile
-          KAFKA_DOCKERFILE=src/kafka/Dockerfile
-          LOAD_GENERATOR_DOCKERFILE=src/load-generator/Dockerfile
-          OTEL_COLLECTOR_DOCKERFILE=src/otel-collector/Dockerfile
-          PAYMENT_DOCKERFILE=src/payment/Dockerfile
-          PRODUCT_CATALOG_DOCKERFILE=src/product-catalog/Dockerfile
-          QUOTE_DOCKERFILE=src/quote/Dockerfile
-          REACT_NATIVE_APP_DOCKERFILE=src/react-native-app/Dockerfile
-          RECOMMENDATION_DOCKERFILE=src/recommendation/Dockerfile
-          SHIPPING_DOCKERFILE=src/shipping/Dockerfile
-          EOF
-
-      - name: Debug – Check Dockerfile paths
-        run: |
-          echo "🔍 Listing Dockerfiles referenced in .env"
-          grep DOCKERFILE .env | while IFS='=' read -r key path; do
-            echo "Checking $key -> $path"
-            if [ -f "$path" ]; then
-              echo "✅ Found: $path"
-            else
-              echo "❌ Missing: $path"
-            fi
-          done
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -69,22 +26,34 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_TOKEN }}
 
-
       - name: Install Docker Compose
         run: |
           sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose --version
-  
 
-      - name: Build and Push All Microservices via Docker Compose
+      - name: Debug – List Dockerfiles
+        run: |
+          echo "🔍 Verifying Dockerfiles from .env"
+          grep _DOCKERFILE= .env | while IFS='=' read -r key path; do
+            echo "$key -> $path"
+            if [ -f "$path" ]; then
+              echo "✅ Found $path"
+            else
+              echo "❌ Missing $path"
+            fi
+          done
+
+      - name: Build and Push All Microservices
         run: |
           docker-compose --env-file .env build
+
           for svc in $(docker-compose --env-file .env config --services); do
-            image="${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}"
-            echo "🚀 Pushing $svc -> $image"
-            docker tag $svc $image
-            docker push $image
+            tag="${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}"
+            image_id=$(docker images -q $svc)
+            echo "📦 Tagging and pushing $svc as $tag"
+            docker tag "$image_id" "$tag"
+            docker push "$tag"
           done
 
       - name: Update Kubernetes Manifest File
@@ -93,10 +62,15 @@ jobs:
             sed -i "s|image: .*/${svc}:.*|image: ${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}|g" kubernetes/complete-deploy.yml
           done
 
-      - name: Commit and Push Updated Manifest to Trigger ArgoCD
+      - name: Commit and Push Updated Manifest
         run: |
           git config --global user.name "shwethaanandram"
           git config --global user.email "shwetha.na88@gmail.com"
-          git add kubernetes/complete-deploy.yml
-          git commit -m "[CI] Updated image tags for all microservices"
-          git push origin main
+
+          if git diff --quiet kubernetes/complete-deploy.yml; then
+            echo "🟢 No changes to commit in manifest."
+          else
+            git add kubernetes/complete-deploy.yml
+            git commit -m "[CI] Updated image tags for all microservices"
+            git push origin HEAD
+          fi
