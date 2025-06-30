@@ -28,23 +28,27 @@ jobs:
           CURRENCY_DOCKERFILE=src/currency/Dockerfile
           EMAIL_DOCKERFILE=src/email/Dockerfile
           FLAGD_DOCKERFILE=src/flagd/Dockerfile
-          FLAGD_UI_DOCKERFILE=src/flagd-ui/Dockerfile
+          FLAGD_UI_DOCKERFILE=src/flagd-ui/src/Dockerfile
           FRAUD_DOCKERFILE=src/fraud-detection/Dockerfile
           FRONTEND_DOCKERFILE=src/frontend/Dockerfile
           FRONTEND_PROXY_DOCKERFILE=src/frontend-proxy/Dockerfile
-          GRAFANA_DOCKERFILE=src/grafana/Dockerfile
           IMAGE_PROVIDER_DOCKERFILE=src/image-provider/Dockerfile
           KAFKA_DOCKERFILE=src/kafka/Dockerfile
           LOAD_GENERATOR_DOCKERFILE=src/load-generator/Dockerfile
           OTEL_COLLECTOR_DOCKERFILE=src/otel-collector/Dockerfile
           PAYMENT_DOCKERFILE=src/payment/Dockerfile
           PRODUCT_CATALOG_DOCKERFILE=src/product-catalog/Dockerfile
-          PROMETHEUS_DOCKERFILE=src/prometheus/Dockerfile
           QUOTE_DOCKERFILE=src/quote/Dockerfile
           REACT_NATIVE_APP_DOCKERFILE=src/react-native-app/Dockerfile
           RECOMMENDATION_DOCKERFILE=src/recommendation/Dockerfile
           SHIPPING_DOCKERFILE=src/shipping/Dockerfile
           EOF
+
+      - name: Install Docker Compose
+        run: |
+          sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose version
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -59,8 +63,8 @@ jobs:
         run: |
           docker-compose --env-file .env build
           for svc in $(docker-compose --env-file .env config --services); do
-            image="${{ secrets.DOCKER_USERNAME }}:${{ github.run_id }}-${svc}"
-            docker tag ${svc} $image
+            image="${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}"
+            docker tag $svc $image
             docker push $image
           done
 
@@ -69,6 +73,9 @@ jobs:
           for svc in $(docker-compose --env-file .env config --services); do
             sed -i "s|image: .*/${svc}:.*|image: ${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}|g" kubernetes/complete-deploy.yml
           done
+
+      - name: Show Updated Manifest Images
+        run: grep 'image:' kubernetes/complete-deploy.yml
 
       - name: Commit and Push Updated Manifest to Trigger ArgoCD
         run: |
