@@ -49,7 +49,7 @@ services:
     image: ${IMAGE_NAME}:${DEMO_VERSION}-ad
     container_name: ad
     build:
-      context: ./
+      context:  ./src/ad
       dockerfile: ${AD_DOCKERFILE}
       cache_from:
         - ${IMAGE_NAME}:${IMAGE_VERSION}-ad
