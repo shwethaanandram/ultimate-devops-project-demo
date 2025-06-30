@@ -17,6 +17,20 @@ jobs:
       - name: Checkout source code
         uses: actions/checkout@v4
 
+      - name: Set environment variables for all services
+        run: |
+          # your .env creation logic
+          echo "..."
+
+      - name: Debug product-catalog build context
+        run: |
+          echo "📦 Listing product-catalog directory:"
+          ls -al src/product-catalog
+          echo "📄 Contents of go.mod:"
+          cat src/product-catalog/go.mod || echo "❌ go.mod not found"
+          echo "📄 Contents of go.sum:"
+          cat src/product-catalog/go.sum || echo "❌ go.sum not found"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
