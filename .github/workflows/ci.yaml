@@ -9,82 +9,61 @@ on:
       - '**'
   workflow_dispatch:
 
+env:
+  DOCKER_BUILDKIT: 1
+
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout source code
         uses: actions/checkout@v4
 
-      - name: Set environment variables for all services
-        run: |
-          # your .env creation logic
-          echo "..."
-
-      - name: Debug product-catalog build context
-        run: |
-          echo "📦 Listing product-catalog directory:"
-          ls -al src/product-catalog
-          echo "📄 Contents of go.mod:"
-          cat src/product-catalog/go.mod || echo "❌ go.mod not found"
-          echo "📄 Contents of go.sum:"
-          cat src/product-catalog/go.sum || echo "❌ go.sum not found"
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Log in to Docker Hub
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Install Docker Compose
+      - name: Create .env file
         run: |
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.24.7/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
-          docker-compose --version
+          cat <<EOF > .env
+          IMAGE_VERSION=1.12.0
+          IMAGE_NAME=ghcr.io/open-telemetry/demo
+          DEMO_VERSION=latest
+          TRACETEST_IMAGE_VERSION=v1.7.1
+          OTEL_JAVA_AGENT_VERSION=2.10.0
+          OPENTELEMETRY_CPP_VERSION=1.18.0
+          COLLECTOR_CONTRIB_IMAGE=ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.116.1
+          FLAGD_IMAGE=ghcr.io/open-feature/flagd:v0.11.5
+          GRAFANA_IMAGE=grafana/grafana:11.4.0
+          JAEGERTRACING_IMAGE=jaegertracing/all-in-one:1.64.0
+          OPENSEARCH_IMAGE=opensearchproject/opensearch:2.18.0
+          POSTGRES_IMAGE=postgres:17.2
+          PROMETHEUS_IMAGE=quay.io/prometheus/prometheus:v3.0.1
+          VALKEY_IMAGE=valkey/valkey:8.0-alpine
+          TRACETEST_IMAGE=kubeshop/tracetest:v1.7.1
+          ENV_PLATFORM=local
+          HOST_FILESYSTEM=/
+          DOCKER_SOCK=/var/run/docker.sock
+          OTEL_COLLECTOR_HOST=otel-collector
+          OTEL_COLLECTOR_PORT_GRPC=4317
+          OTEL_COLLECTOR_PORT_HTTP=4318
+          OTEL_COLLECTOR_CONFIG=./src/otel-collector/otelcol-config.yml
+          OTEL_COLLECTOR_CONFIG_EXTRAS=./src/otel-collector/otelcol-config-extras.yml
+          OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+          PUBLIC_OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://localhost:8080/otlp-http/v1/traces
+          OTEL_RESOURCE_ATTRIBUTES=service.namespace=opentelemetry-demo,service.version=1.12.0
+          OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE=cumulative
+          # Add any others if needed
+          EOF
 
-      - name: Debug – List Dockerfiles
+      - name: Build all services
         run: |
-          echo "🔍 Verifying Dockerfiles from .env"
-          grep _DOCKERFILE= .env | while IFS='=' read -r key path; do
-            echo "$key -> $path"
-            if [ -f "$path" ]; then
-              echo "✅ Found $path"
-            else
-              echo "❌ Missing $path"
-            fi
-          done
+          docker compose --env-file .env build --parallel
 
-      - name: Build and Push All Microservices
-        run: |
-          docker-compose --env-file .env build
-
-          for svc in $(docker-compose --env-file .env config --services); do
-            tag="${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}"
-            image_id=$(docker images -q $svc)
-            echo "📦 Tagging and pushing $svc as $tag"
-            docker tag "$image_id" "$tag"
-            docker push "$tag"
-          done
-
-      - name: Update Kubernetes Manifest File
-        run: |
-          for svc in $(docker-compose --env-file .env config --services); do
-            sed -i "s|image: .*/${svc}:.*|image: ${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}|g" kubernetes/complete-deploy.yml
-          done
-
-      - name: Commit and Push Updated Manifest
-        run: |
-          git config --global user.name "shwethaanandram"
-          git config --global user.email "shwetha.na88@gmail.com"
-
-          if git diff --quiet kubernetes/complete-deploy.yml; then
-            echo "🟢 No changes to commit in manifest."
-          else
-            git add kubernetes/complete-deploy.yml
-            git commit -m "[CI] Updated image tags for all microservices"
-            git push origin HEAD
-          fi
