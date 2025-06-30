@@ -3,32 +3,13 @@ name: CI Pipeline for All Services with Docker Compose + ArgoCD
 on:
   push:
     branches:
-      - main
-
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
-
-      - name: Set environment variables for all services
-        run: |
-          cat <<EOF > .env
-          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}
-          DEMO_VERSION=${{ github.run_id }}
-          IMAGE_VERSION=latest
-          ACCOUNTING_DOCKERFILE=src/accounting/Dockerfile
-          AD_DOCKERFILE=src/ad/Dockerfile
-          CART_DOCKERFILE=src/cart/src/Dockerfile
-          CHE
-name: CI Pipeline for All Services with Docker Compose + ArgoCD
-
-on:
-  push:
+      - '**'
+  pull_request:
     branches:
-      - main
+      - '**'
+  workflow_dispatch:
+
+  
 
 jobs:
   build-and-deploy:
@@ -100,4 +81,14 @@ jobs:
 
       - name: Update Kubernetes Manifest File
         run: |
-          for sv
+          for svc in $(docker-compose --env-file .env config --services); do
+            sed -i "s|image: .*/${svc}:.*|image: ${{ secrets.DOCKER_USERNAME }}/${svc}:${{ github.run_id }}|g" kubernetes/complete-deploy.yml
+          done
+
+      - name: Commit and Push Updated Manifest to Trigger ArgoCD
+        run: |
+          git config --global user.name "shwethaanandram"
+          git config --global user.email "shwetha.na88@gmail.com"
+          git add kubernetes/complete-deploy.yml
+          git commit -m "[CI] Updated image tags for all microservices"
+          git push origin main
