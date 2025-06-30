@@ -64,6 +64,5 @@ jobs:
           EOF
 
       - name: Build all services
-        run: |
-          docker compose --env-file .env build --parallel
+        run: docker compose --env-file .env build --parallel
 
